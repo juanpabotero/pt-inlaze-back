@@ -10,3 +10,4 @@
 4. Levantar la base de datos con `docker-compose up -d`
 5. Levantar el proyecto con `npm run start:dev`
 6. Ejecutar el script `inlaze_db.sql` en la base de datos para insertar los roles base.
+7. Importar en postman el archivo `InlazeDB.postman_collection.json` para probar los endpoints.
