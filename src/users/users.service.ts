@@ -5,12 +5,17 @@ import { Repository } from 'typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
+import * as bcrypt from 'bcrypt';
+import { LoginUserDto } from './dto/login-user.dto';
+import { JwtService } from '@nestjs/jwt';
+import { JwtPayload } from './interface/jwt-payload.interface';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User) private userRepository: Repository<User>,
     private roleServices: RolesService,
+    private jwtAuthService: JwtService,
   ) {}
 
   async createUser(createUserDto: CreateUserDto) {
@@ -18,16 +23,21 @@ export class UsersService {
       where: { email: createUserDto.email },
     });
     if (user) {
-      return new HttpException('User already exists', HttpStatus.CONFLICT);
+      throw new HttpException('User already exists', HttpStatus.CONFLICT);
     }
+
+    const { password, ...userData } = createUserDto;
 
     const role = await this.roleServices.getRoleById(
       createUserDto.role_id ?? 3,
     );
     if (role instanceof HttpException) return role;
 
-    const newUser = this.userRepository.create(createUserDto);
-    newUser.role = role;
+    const newUser = this.userRepository.create({
+      ...userData,
+      password: bcrypt.hashSync(password, 10),
+      role,
+    });
 
     return this.userRepository.save(newUser);
   }
@@ -42,22 +52,30 @@ export class UsersService {
       where: { id },
     });
     if (!user || user.is_deleted) {
-      return new HttpException('User not found', HttpStatus.NOT_FOUND);
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
     return user;
   }
 
   async updateUser(id: number, updateUserDto: UpdateUserDto) {
-    const user = await this.userRepository.preload({
+    let user = await this.userRepository.preload({
       id,
       ...updateUserDto,
     });
     if (!user || user.is_deleted) {
-      return new HttpException('User not found', HttpStatus.NOT_FOUND);
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
+
+    const { password, ...userData } = user;
+
     const role = await this.roleServices.getRoleById(user.role_id);
     if (role instanceof HttpException) return role;
-    user.role = role;
+
+    user = {
+      ...userData,
+      password: bcrypt.hashSync(password, 10),
+      role,
+    };
 
     return this.userRepository.save(user);
   }
@@ -67,10 +85,34 @@ export class UsersService {
       where: { id },
     });
     if (!user || user.is_deleted) {
-      return new HttpException('User not found', HttpStatus.NOT_FOUND);
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
     user.is_deleted = true;
 
     return this.userRepository.save(user);
+  }
+
+  async loginUser(loginUserDto: LoginUserDto) {
+    const { password, email } = loginUserDto;
+    const user = await this.userRepository.findOne({
+      where: { email },
+      select: { email: true, password: true, id: true },
+    });
+
+    if (!user || user.is_deleted) {
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    }
+    if (!bcrypt.compareSync(password, user.password)) {
+      throw new HttpException('Invalid credentials', HttpStatus.UNAUTHORIZED);
+    }
+
+    return {
+      ...user,
+      token: this.getJwtToken({ id: user.id }),
+    };
+  }
+
+  private getJwtToken(payload: JwtPayload) {
+    return this.jwtAuthService.sign(payload);
   }
 }

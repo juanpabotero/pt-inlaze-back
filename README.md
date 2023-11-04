@@ -9,3 +9,4 @@
 3. Crear un archivo `.env` en la raíz del proyecto en base a `.env.example`
 4. Levantar la base de datos con `docker-compose up -d`
 5. Levantar el proyecto con `npm run start:dev`
+6. Ejecutar el script `inlaze_db.sql` en la base de datos para insertar los roles base.
